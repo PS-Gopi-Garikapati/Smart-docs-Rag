@@ -35,7 +35,7 @@ Smart docs/
 │   │   ├── retriever.py          # Query embedding generation and top-K context retrieval
 │   │   ├── prompt_builder.py     # System prompt formatting and context assembly
 │   │   ├── llm_client.py         # Ollama (Llama3) / Local extractive fallback with Temp, Top-P, Top-K
-│   │   └── mcp_stub.py           # Model Context Protocol (MCP) registry and stubs
+│   │   
 │   └── routes/
 │       ├── __init__.py
 │       ├── upload_routes.py      # Document upload (PDF, DOCX, CSV, TXT), listing, clearing index
