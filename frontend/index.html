@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Document Assistant | RAG Intelligence</title>
+    <!-- Google Fonts: Inter & Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header Bar -->
+        <header class="app-header">
+            <div class="logo-area">
+                <div class="logo-icon">
+                    <i class="fa-solid fa-brain"></i>
+                </div>
+                <div class="logo-text">
+                    <h1>Smart Document <span>Assistant</span></h1>
+                    <p class="tagline">Retrieval-Augmented Generation (RAG) System</p>
+                </div>
+            </div>
+            <div class="header-actions">
+                <div class="status-badge" id="system-status">
+                    <span class="status-dot"></span>
+                    <span id="status-text">System Ready</span>
+                </div>
+                <button class="btn btn-outline-danger btn-sm" id="btn-clear-all" title="Clear all uploaded documents and reset index">
+                    <i class="fa-solid fa-trash-can"></i> Clear All
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Layout: Dual Column Grid -->
+        <main class="app-main-grid">
+            
+            <!-- Left Control Panel: Document Upload & Hyperparameters -->
+            <aside class="control-panel">
+                
+                <!-- Section 1: Document Upload Area -->
+                <div class="card panel-card">
+                    <div class="card-header">
+                        <i class="fa-solid fa-file-invoice card-icon"></i>
+                        <h2>1. Upload Documents</h2>
+                    </div>
+                    
+                    <div class="upload-dropzone" id="dropzone">
+                        <input type="file" id="file-input" accept=".pdf,.docx,.doc,.csv,.txt,.md,.json,.log,.text" multiple hidden>
+                        <div class="dropzone-content">
+                            <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
+                            <p class="dropzone-title">Drag & drop files here</p>
+                            <p class="dropzone-subtitle">Supports PDF, Word (.docx, .doc), CSV, TXT & Markdown</p>
+                            <button class="btn btn-primary btn-sm mt-2" id="btn-select-files">
+                                <i class="fa-solid fa-folder-open"></i> Select Documents
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Upload Progress Bar -->
+                    <div class="upload-progress-container hidden" id="upload-progress-box">
+                        <div class="progress-info">
+                            <span id="upload-progress-filename">Uploading document...</span>
+                            <span id="upload-progress-percent">0%</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill" id="upload-progress-bar"></div>
+                        </div>
+                    </div>
+
+                    <!-- Uploaded Files List -->
+                    <div class="document-inventory">
+                        <div class="inventory-header">
+                            <span>Indexed Documents</span>
+                            <span class="badge" id="doc-count-badge">0 Docs</span>
+                        </div>
+                        <ul class="document-list" id="document-list">
+                            <li class="empty-list-msg">No documents uploaded yet. Upload a PDF, Word, CSV, or Text file to start asking questions.</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Section 2: Generation Hyperparameters -->
+                <div class="card panel-card mt-3">
+                    <div class="card-header">
+                        <i class="fa-solid fa-sliders card-icon"></i>
+                        <h2>2. RAG Model Settings</h2>
+                    </div>
+
+                    <div class="sliders-container">
+                        <!-- Temperature Slider -->
+                        <div class="slider-group">
+                            <div class="slider-label-row">
+                                <label for="temperature-slider">
+                                    <i class="fa-solid fa-fire icon-sm"></i> Temperature
+                                </label>
+                                <span class="slider-val-badge" id="temp-val">0.30</span>
+                            </div>
+                            <input type="range" id="temperature-slider" min="0" max="1" step="0.05" value="0.30">
+                            <div class="slider-range-labels">
+                                <span>0.0 (Strict / Focused)</span>
+                                <span>1.0 (Creative)</span>
+                            </div>
+                        </div>
+
+                        <!-- Top-P Slider -->
+                        <div class="slider-group mt-3">
+                            <div class="slider-label-row">
+                                <label for="top-p-slider">
+                                    <i class="fa-solid fa-filter icon-sm"></i> Top-P (Nucleus)
+                                </label>
+                                <span class="slider-val-badge" id="top-p-val">0.90</span>
+                            </div>
+                            <input type="range" id="top-p-slider" min="0" max="1" step="0.05" value="0.90">
+                            <div class="slider-range-labels">
+                                <span>0.0 (Selective)</span>
+                                <span>1.0 (Diverse)</span>
+                            </div>
+                        </div>
+
+                        <!-- Top-K Input Field -->
+                        <div class="slider-group mt-3">
+                            <div class="slider-label-row">
+                                <label for="top-k-input">
+                                    <i class="fa-solid fa-layer-group icon-sm"></i> Top-K Chunks
+                                </label>
+                                <input type="number" id="top-k-input" class="number-input" min="1" max="20" value="3">
+                            </div>
+                            <p class="field-help-text">Number of relevant context passages to retrieve from ChromaDB.</p>
+                        </div>
+                    </div>
+                </div>
+
+
+            </aside>
+
+            <!-- Right Workspace: Interactive Chat & Answer Workspace -->
+            <section class="chat-workspace">
+                
+                <!-- Chat Feed Display Area -->
+                <div class="chat-feed-card card">
+                    <div class="chat-feed-header">
+                        <div class="header-title">
+                            <i class="fa-solid fa-comments text-accent"></i>
+                            <h3>Assistant Conversation</h3>
+                        </div>
+                        <div class="chat-header-actions">
+                            <button class="btn btn-ghost btn-sm" id="btn-export-chat" title="Export conversation transcript">
+                                <i class="fa-solid fa-download"></i> Export
+                            </button>
+                            <button class="btn btn-ghost btn-sm" id="btn-clear-chat" title="Clear chat view">
+                                <i class="fa-solid fa-broom"></i> Clear View
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Scrollable Chat Stream -->
+                    <div class="chat-history-container" id="chat-history">
+                        
+                        <!-- Default Welcome Card -->
+                        <div class="welcome-banner" id="welcome-banner">
+                            <div class="welcome-icon">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                            </div>
+                            <h2>Welcome to Smart Document Assistant</h2>
+                            <p>Upload PDF, Word, CSV, or Text documents on the left panel, configure your retrieval sliders, and ask any question. Answers will be generated strictly from your uploaded files!</p>
+                            <div class="welcome-steps">
+                                <div class="step-chip"><i class="fa-solid fa-1"></i> Upload Documents</div>
+                                <div class="step-chip"><i class="fa-solid fa-2"></i> Set Hyperparameters</div>
+                                <div class="step-chip"><i class="fa-solid fa-3"></i> Ask Question</div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- Bottom Input Box Area -->
+                <div class="question-input-card card mt-3">
+                    <form id="ask-form" class="question-form">
+                        <div class="input-wrapper">
+                            <textarea 
+                                id="question-input" 
+                                class="question-textarea" 
+                                placeholder="Ask a question about your uploaded documents (PDF, Word, CSV, TXT)..." 
+                                rows="2"
+                                required
+                            ></textarea>
+                            <div class="input-bottom-row">
+                                <div class="quick-hints">
+                                    <span><i class="fa-solid fa-circle-info"></i> Answers strictly grounded in retrieved document context</span>
+                                </div>
+                                </div>
+                                <button type="submit" class="btn btn-primary btn-ask" id="btn-ask">
+                                    <span class="btn-text">Ask Question</span>
+                                    <i class="fa-solid fa-paper-plane"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+
+            </section>
+
+        </main>
+    </div>
+
+    <!-- Notification Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- JavaScript Files -->
+    <script src="/static/js/markdown.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
