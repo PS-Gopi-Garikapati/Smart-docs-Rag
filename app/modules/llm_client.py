@@ -52,12 +52,65 @@ def generate_llm_response(
 
     try:
         logger.info(f"Generating LLM answer locally via Ollama ({OLLAMA_MODEL_NAME}) (Temp: {temp}, Top-P: {p_val}, Top-K: {k_val})...")
-        return _call_local_ollama(prompt_payload, temp, p_val, k_val)
+        response = _call_local_ollama(prompt_payload, temp, p_val, k_val)
+        if _is_response_grounded(response, chunks):
+            return response
+        else:
+            logger.warning("Generated LLM response failed grounding validation. Overriding with fallback response.")
+            return NOT_AVAILABLE_RESPONSE
     except Exception as e:
         logger.warning(f"Ollama local generation failed ({e}). Reverting to local extractive RAG engine...")
 
     # Fallback: Local Extractive RAG Engine if Ollama call fails
     return _local_extractive_generation(prompt_payload, chunks, temp, p_val, k_val)
+
+
+def _is_response_grounded(response: str, chunks: List[Dict[str, Any]]) -> bool:
+    """
+    Checks if the generated response is grounded in the retrieved chunks by verifying
+    that the descriptive terms in the response actually exist within the chunk texts.
+    """
+    if not response:
+        return False
+
+    resp_lower = response.strip().lower()
+    fallback_lower = NOT_AVAILABLE_RESPONSE.strip().lower()
+    
+    if fallback_lower in resp_lower or "don't have relevant answer" in resp_lower or "no relevant document" in resp_lower:
+        return True
+
+    resp_words = set(re.findall(r'\b\w{3,}\b', resp_lower))
+    
+    stop_words = {
+        "the", "and", "for", "that", "this", "with", "from", "you", "are", "not", "but", 
+        "was", "were", "been", "have", "has", "had", "can", "could", "should", "would",
+        "who", "what", "where", "when", "why", "how", "all", "any", "both", "each", "few",
+        "more", "most", "other", "some", "such", "than", "too", "very", "she", "her", "him", 
+        "his", "them", "their", "theirs", "its", "our", "ours", "your", "yours", "source",
+        "page", "document", "answer", "question", "text", "context", "information", "according",
+        "uploaded", "provided", "snippet", "file", "citation"
+    }
+    
+    resp_keywords = resp_words - stop_words
+    if not resp_keywords:
+        return True
+
+    combined_chunks_text = " ".join([c.get("text", "") for c in chunks]).lower()
+    chunk_words = set(re.findall(r'\b\w{3,}\b', combined_chunks_text))
+
+    matching_keywords = resp_keywords.intersection(chunk_words)
+    if not matching_keywords:
+        logger.info("Grounding check: Zero matching keywords found between LLM response and retrieved context.")
+        return False
+
+    overlap_ratio = len(matching_keywords) / len(resp_keywords)
+    logger.info(f"Grounding check: {len(matching_keywords)}/{len(resp_keywords)} keywords matched context (Ratio: {overlap_ratio:.4f})")
+
+    if overlap_ratio < 0.25:
+        return False
+
+    return True
+
 
 
 def _call_local_ollama(

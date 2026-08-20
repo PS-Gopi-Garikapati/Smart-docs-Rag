@@ -49,5 +49,6 @@ DEFAULT_TEMPERATURE: float = float(os.getenv("DEFAULT_TEMPERATURE", "0.3"))
 DEFAULT_TOP_P: float = float(os.getenv("DEFAULT_TOP_P", "0.9"))
 
 # Standard Fallback Guardrail Response (Required by specification)
-NOT_AVAILABLE_RESPONSE: str = "The answer is not available in the uploaded documents."
+NOT_AVAILABLE_RESPONSE: str = "I don't have relevant answer for that."
+
 
