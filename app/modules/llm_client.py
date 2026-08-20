@@ -38,6 +38,13 @@ def generate_llm_response(
     if not chunks:
         return NOT_AVAILABLE_RESPONSE
 
+    # Guardrail: If the most relevant chunk has a similarity score below 0.35,
+    # we determine the information is not present in the uploaded documents.
+    max_similarity = max(c.get("similarity", 0.0) for c in chunks)
+    if max_similarity < 0.35:
+        logger.info(f"Retrieved context maximum similarity is {max_similarity:.4f}, which is below the threshold of 0.35. Returning standard fallback response.")
+        return NOT_AVAILABLE_RESPONSE
+
     # Validate parameters
     temp = max(0.0, min(float(temperature), 1.0))
     p_val = max(0.0, min(float(top_p), 1.0))

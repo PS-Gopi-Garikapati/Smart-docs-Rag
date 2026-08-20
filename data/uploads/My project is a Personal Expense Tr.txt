@@ -1,0 +1,1 @@
+My project is a Personal Expense Tracker developed using Python. It allows users to record and manage their daily expenses. The user can add an expense by entering the amount, category, and description. The application stores the expenses and provides options to view all expenses, calculate the total amount, search expenses by category, and delete an expense using its ID.

@@ -71,6 +71,6 @@ if __name__ == "__main__":
     from app.config import HOST, PORT
     
     logger.info(f"Starting Smart Document Assistant API... on {HOST}:{PORT}")
-    uvicorn.run("main:app", host=HOST, port=PORT, reload=True)
+    uvicorn.run("main:app", host=HOST, port=PORT, reload=True, reload_dirs=["app", "main.py"])
 
 
