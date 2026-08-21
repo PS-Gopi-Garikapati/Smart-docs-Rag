@@ -33,3 +33,7 @@ venv/
 
 # Database and generated data
 data/chroma_db/
+data/uploads/
+.pytest_cache/
+*.json
+!app/evaluation_set.json

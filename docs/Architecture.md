@@ -44,7 +44,6 @@ The **Smart Document Assistant** is designed using clean architecture principles
 - **Retriever** (`retriever.py`): Matches query embeddings against indexed document vectors using cosine similarity.
 - **Prompt Builder** (`prompt_builder.py`): Injects context blocks and constraints into prompt structures.
 - **LLM Client** (`llm_client.py`): Dispatches grounding requests to local Ollama (Llama3) for privacy-preserving inference, with automatic local extractive fallback.
-- **MCP Registry** (`mcp_stub.py`): Exposes standard stubs to register tools for external agent execution.
 
 ### 4. Data Layer
 - **ChromaDB**: Native C++ dense vector database.

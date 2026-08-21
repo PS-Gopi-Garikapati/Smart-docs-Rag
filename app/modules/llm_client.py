@@ -9,7 +9,7 @@ import os
 import re
 import logging
 from typing import Dict, Any, List
-from app.config import OLLAMA_HOST, OLLAMA_MODEL_NAME, NOT_AVAILABLE_RESPONSE, DEFAULT_TEMPERATURE, DEFAULT_TOP_P, DEFAULT_TOP_K
+from app.config import OLLAMA_HOST, OLLAMA_MODEL_NAME, NOT_AVAILABLE_RESPONSE, DEFAULT_TEMPERATURE, DEFAULT_TOP_P, DEFAULT_TOP_K, SIMILARITY_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
@@ -38,12 +38,13 @@ def generate_llm_response(
     if not chunks:
         return NOT_AVAILABLE_RESPONSE
 
-    # Guardrail: If the most relevant chunk has a similarity score below 0.35,
+    # Guardrail: If the most relevant chunk has a similarity score below SIMILARITY_THRESHOLD,
     # we determine the information is not present in the uploaded documents.
     max_similarity = max(c.get("similarity", 0.0) for c in chunks)
-    if max_similarity < 0.35:
-        logger.info(f"Retrieved context maximum similarity is {max_similarity:.4f}, which is below the threshold of 0.35. Returning standard fallback response.")
+    if max_similarity < SIMILARITY_THRESHOLD:
+        logger.info(f"Retrieved context maximum similarity is {max_similarity:.4f}, which is below the threshold of {SIMILARITY_THRESHOLD}. Returning standard fallback response.")
         return NOT_AVAILABLE_RESPONSE
+
 
     # Validate parameters
     temp = max(0.0, min(float(temperature), 1.0))

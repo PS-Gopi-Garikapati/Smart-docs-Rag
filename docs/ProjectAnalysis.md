@@ -22,8 +22,8 @@ Smart docs/
 │   │   ├── document_processor.py # Handles file text extraction and semantic chunking
 │   │   ├── embeddings.py      # Generates 384-dimensional semantic dense vector representations
 │   │   ├── llm_client.py      # Connects to Llama LLM via Ollama (with pure-Python fallback)
-│   │   ├── mcp_stub.py        # Mock interfaces for Model Context Protocol integrations
 │   │   ├── prompt_builder.py  # Builds context-grounded prompt templates for generation
+
 │   │   ├── retriever.py       # Retrieves relevant database chunks using query vectors
 │   │   └── vector_store.py    # Manages local ChromaDB and PersistentJsonVectorStore fallback
 │   └── routes/                # FastAPI web routes/endpoints

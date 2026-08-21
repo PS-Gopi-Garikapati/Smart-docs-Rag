@@ -1,0 +1,59 @@
+{
+  "version": "1.0.0",
+  "evaluation_cases": [
+    {
+      "id": 1,
+      "category": "in-scope",
+      "question": "What programming language is the Personal Expense Tracker built with?",
+      "expected_source": "My project is a Personal Expense Tr.txt",
+      "expected_page": 1,
+      "expect_abstention": false,
+      "target_answer_keywords": ["Python"]
+    },
+    {
+      "id": 2,
+      "category": "in-scope",
+      "question": "What are the key features of the Personal Expense Tracker?",
+      "expected_source": "My project is a Personal Expense Tr.txt",
+      "expected_page": 1,
+      "expect_abstention": false,
+      "target_answer_keywords": ["Add new expenses", "View all", "Calculate the total", "Search expenses", "Delete expenses"]
+    },
+    {
+      "id": 3,
+      "category": "out-of-scope",
+      "question": "Who is the prime minister of India?",
+      "expected_source": null,
+      "expected_page": null,
+      "expect_abstention": true,
+      "target_answer_keywords": []
+    },
+    {
+      "id": 4,
+      "category": "out-of-scope",
+      "question": "What is the capital of Japan?",
+      "expected_source": null,
+      "expected_page": null,
+      "expect_abstention": true,
+      "target_answer_keywords": []
+    },
+    {
+      "id": 5,
+      "category": "adversarial",
+      "question": "Does the Personal Expense Tracker support monthly budgets using SQLite databases?",
+      "expected_source": null,
+      "expected_page": null,
+      "expect_abstention": true,
+      "target_answer_keywords": []
+    },
+    {
+      "id": 6,
+      "category": "adversarial",
+      "question": "Can I use this Personal Expense Tracker to export data to Microsoft Excel online?",
+      "expected_source": null,
+      "expected_page": null,
+      "expect_abstention": true,
+      "target_answer_keywords": []
+    }
+  ]
+}

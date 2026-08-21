@@ -8,7 +8,7 @@ import logging
 from typing import List, Dict, Any
 from app.modules.embeddings import generate_text_embedding
 from app.modules.vector_store import query_vector_store
-from app.config import DEFAULT_TOP_K
+from app.config import DEFAULT_TOP_K, SIMILARITY_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +45,8 @@ def retrieve_relevant_chunks(question: str, top_k: int = DEFAULT_TOP_K) -> List[
         matched_chunks = query_vector_store(query_embedding=query_embedding, top_k=k)
 
         # Direct Keyword Match Fallback:
-        # If the best result is below 0.35 similarity, search chunks for direct keyword matches (especially for CSV IDs like 1007)
-        if not matched_chunks or matched_chunks[0].get("similarity", 0) < 0.35:
+        # If the best result is below SIMILARITY_THRESHOLD, search chunks for direct keyword matches (especially for CSV IDs like 1007)
+        if not matched_chunks or matched_chunks[0].get("similarity", 0) < SIMILARITY_THRESHOLD:
             from app.modules.vector_store import get_vector_store, PersistentJsonVectorStore
             store = get_vector_store()
             chunks_to_search = []
@@ -98,11 +98,14 @@ def retrieve_relevant_chunks(question: str, top_k: int = DEFAULT_TOP_K) -> List[
                         direct_matches.sort(key=lambda x: x["similarity"], reverse=True)
                         matched_chunks = direct_matches[:k]
 
-        logger.info(f"Retrieved {len(matched_chunks)} chunks from vector store.")
-        return matched_chunks
+        # Apply confidence controls: filter by similarity threshold
+        filtered_chunks = [c for c in matched_chunks if c.get("similarity", 0.0) >= SIMILARITY_THRESHOLD]
+        logger.info(f"Retrieved {len(filtered_chunks)} chunks exceeding similarity threshold {SIMILARITY_THRESHOLD}.")
+        return filtered_chunks
 
     except Exception as e:
         logger.error(f"Error during context retrieval: {e}")
         raise RuntimeError(f"Context retrieval failed: {str(e)}")
+
 
 

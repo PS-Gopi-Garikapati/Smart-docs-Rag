@@ -24,18 +24,19 @@ logger = logging.getLogger("main")
 # Initialize FastAPI application
 app = FastAPI(
     title="Smart Document Assistant API",
-    description="Retrieval-Augmented Generation (RAG) backend powered by SentenceTransformers, ChromaDB, and Google Gemini API.",
+    description="Retrieval-Augmented Generation (RAG) backend powered by SentenceTransformers, ChromaDB, and local Ollama Llama3.",
     version="1.0.0"
 )
 
 # Configure Cross-Origin Resource Sharing (CORS)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:8000", "http://127.0.0.1:8000", "http://localhost:5173", "http://127.0.0.1:5173"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
 
 # Register API Route Modules
 app.include_router(upload_router)

@@ -51,4 +51,8 @@ DEFAULT_TOP_P: float = float(os.getenv("DEFAULT_TOP_P", "0.9"))
 # Standard Fallback Guardrail Response (Required by specification)
 NOT_AVAILABLE_RESPONSE: str = "I don't have relevant answer for that."
 
+# Similarity/Relevance threshold for RAG retrieval
+SIMILARITY_THRESHOLD: float = 0.35
+
+
 

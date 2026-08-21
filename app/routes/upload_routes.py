@@ -57,7 +57,7 @@ class ClearResponse(BaseModel):
 async def upload_documents(files: List[UploadFile] = File(...)) -> UploadResponse:
     """
     Purpose:
-    Handles multi-format document file uploads (PDF, Word, CSV, Text, Markdown).
+    Handles multi-format document file uploads (PDF, Word, Text, Markdown).
 
     Processing Steps:
     1. Validates supported document file extension.
@@ -89,32 +89,55 @@ async def upload_documents(files: List[UploadFile] = File(...)) -> UploadRespons
     for file in files:
         if not file.filename:
             continue
-        ext = os.path.splitext(file.filename)[1].lower()
+        
+        # Enforce upload size limit (200MB = 200 * 1024 * 1024 bytes)
+        MAX_SIZE = 200 * 1024 * 1024
+        try:
+            file.file.seek(0, 2)
+            file_size = file.file.tell()
+            file.file.seek(0)
+        except Exception as e:
+            logger.warning(f"Could not determine file size for '{file.filename}': {e}")
+            file_size = 0
+
+        if file_size > MAX_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File size exceeds the 200MB limit for '{file.filename}'."
+            )
+
+        # Sanitize filename to prevent directory traversal and invalid characters
+        import re
+        original_name = file.filename
+        base_name, ext = os.path.splitext(original_name)
+        sanitized_base = re.sub(r'[^a-zA-Z0-9_\-]', '_', base_name)
+        sanitized_filename = f"{sanitized_base}{ext.lower()}"
+
         # Validate file extension
-        if ext not in ALLOWED_EXTENSIONS:
+        if ext.lower() not in ALLOWED_EXTENSIONS:
             allowed_list = ", ".join(sorted(list(ALLOWED_EXTENSIONS)))
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid file type for '{file.filename}'. Supported formats are: {allowed_list}"
+                detail=f"Invalid file type for '{original_name}'. Supported formats are: {allowed_list}"
             )
 
-        saved_path = os.path.join(UPLOAD_DIR, file.filename)
+        saved_path = os.path.join(UPLOAD_DIR, sanitized_filename)
 
         try:
             # Clean up existing vector store chunks if re-uploading file with same name
-            delete_document_from_vector_store(file.filename)
+            delete_document_from_vector_store(sanitized_filename)
 
             # Save uploaded file stream to storage
             with open(saved_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
 
-            logger.info(f"Saved uploaded file: '{file.filename}' to {saved_path}")
+            logger.info(f"Saved uploaded file: '{sanitized_filename}' to {saved_path}")
 
             # Step 1: Extract text per page/section based on format
             pages_content = extract_text_from_file(saved_path)
 
             # Step 2: Chunk pages into semantic snippets
-            chunks = chunk_document_pages(pages_content, doc_name=file.filename)
+            chunks = chunk_document_pages(pages_content, doc_name=sanitized_filename)
 
             # Step 3: Extract texts and generate batch embeddings
             chunk_texts = [c["text"] for c in chunks]
@@ -125,16 +148,18 @@ async def upload_documents(files: List[UploadFile] = File(...)) -> UploadRespons
             total_chunks_added += added_count
 
             processed_summary.append(DocumentSummary(
-                filename=file.filename,
+                filename=sanitized_filename,
                 pages_parsed=len(pages_content),
                 chunks_indexed=added_count
             ))
 
+        except HTTPException:
+            raise
         except Exception as e:
-            logger.error(f"Error processing upload for file '{file.filename}': {e}")
+            logger.error(f"Error processing upload for file '{sanitized_filename}': {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to process '{file.filename}': {str(e)}"
+                detail=f"Failed to process '{sanitized_filename}': {str(e)}"
             )
 
     return UploadResponse(
@@ -143,6 +168,7 @@ async def upload_documents(files: List[UploadFile] = File(...)) -> UploadRespons
         total_chunks_indexed=total_chunks_added,
         documents=processed_summary
     )
+
 
 
 @router.get("/documents", response_model=ListDocumentsResponse)
