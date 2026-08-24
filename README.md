@@ -6,7 +6,7 @@ A production-grade, modular Retrieval-Augmented Generation (RAG) system built wi
 
 ## Key Features
 
-- **Document Processing**: Reads multi-format documents (**PDF**, **Word .docx**, **CSV**, **Plain Text .txt**, **Markdown .md**, **JSON**) and extracts clean text content.
+- **Document Processing**: Reads multi-format documents (**PDF**, **Word .docx**, **Plain Text .txt**, **Markdown .md**, **JSON**) and extracts clean text content.
 - **Text Chunking**: Sliding-window semantic text chunking with metadata tracking (source file, page numbers, character lengths).
 - **Dense Vector Embeddings**: SentenceTransformers (`all-MiniLM-L6-v2`) generating high-dimensional semantic embeddings.
 - **Vector Database**: Persistent local ChromaDB collection storing chunk vectors and metadata.
