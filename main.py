@@ -6,6 +6,7 @@ and registers document management and RAG query route endpoints.
 
 import os
 import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -21,11 +22,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger("main")
 
-# Initialize FastAPI application
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup actions
+    from app.config import HOST, PORT
+    click_host = "localhost" if HOST == "0.0.0.0" else HOST
+    logger.info("\n" + "="*50 + f"\nSmart Document Assistant is online!\nClick here to open: http://{click_host}:{PORT}/\n" + "="*50 + "\n")
+    yield
+
+# Initialize FastAPI application with lifespan context manager
 app = FastAPI(
     title="Smart Document Assistant API",
     description="Retrieval-Augmented Generation (RAG) backend powered by SentenceTransformers, ChromaDB, and local Ollama Llama3.",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Configure Cross-Origin Resource Sharing (CORS)
@@ -41,6 +51,7 @@ app.add_middleware(
 # Register API Route Modules
 app.include_router(upload_router)
 app.include_router(query_router)
+
 
 # Mount Frontend Static Files Directory
 frontend_path = os.path.join(os.path.dirname(__file__), "frontend")
@@ -71,7 +82,14 @@ if __name__ == "__main__":
     import uvicorn
     from app.config import HOST, PORT
     
+    click_host = "localhost" if HOST == "0.0.0.0" else HOST
+    print(f"\n==================================================")
+    print(f"  CLICKABLE LOCALHOST LINK TO WEBSITE:")
+    print(f"  http://{click_host}:{PORT}/")
+    print(f"==================================================\n")
+    
     logger.info(f"Starting Smart Document Assistant API... on {HOST}:{PORT}")
     uvicorn.run("main:app", host=HOST, port=PORT, reload=True, reload_dirs=["app", "main.py"])
+
 
 

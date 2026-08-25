@@ -121,3 +121,22 @@ def test_upload_validation_size_limit():
     )
     assert response.status_code == 201
     assert "success" in response.json()["status"]
+
+
+def test_retrieval_stemming_fallback():
+    store = get_vector_store()
+    store.clear()
+    
+    # Add a mock document with the word "document"
+    store.upsert(
+        ids=["test_chunk_stem_1"],
+        documents=["This text describes the Smart Document Assistant details."],
+        embeddings=[[0.1]*384],
+        metadatas=[{"source": "test_smart_doc.txt", "page": 1}]
+    )
+
+    # Query with word variation "docs" (not present in chunk, but "document" is)
+    retrieved = retrieve_relevant_chunks("smart docs")
+    assert len(retrieved) > 0
+    assert "Smart Document Assistant" in retrieved[0]["text"]
+

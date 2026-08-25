@@ -14,6 +14,24 @@ from app.config import OLLAMA_HOST, OLLAMA_MODEL_NAME, NOT_AVAILABLE_RESPONSE, D
 logger = logging.getLogger(__name__)
 
 
+def get_word_root(w: str) -> str:
+    """
+    Normalizes a word to its root stem by removing common plurals and verb suffixes.
+    """
+    w = w.lower()
+    if w.endswith("ies"):
+        w = w[:-3] + "i"
+    elif w.endswith("es") and not w.endswith("ces") and not w.endswith("ses"):
+        w = w[:-2]
+    elif w.endswith("s") and not w.endswith("ss") and not w.endswith("us"):
+        w = w[:-1]
+    elif w.endswith("ing"):
+        w = w[:-3]
+    elif w.endswith("ed"):
+        w = w[:-2]
+    return w[:4] if len(w) >= 4 else w
+
+
 def generate_llm_response(
     prompt_payload: Dict[str, str],
     temperature: float = DEFAULT_TEMPERATURE,
@@ -54,7 +72,25 @@ def generate_llm_response(
     try:
         logger.info(f"Generating LLM answer locally via Ollama ({OLLAMA_MODEL_NAME}) (Temp: {temp}, Top-P: {p_val}, Top-K: {k_val})...")
         response = _call_local_ollama(prompt_payload, temp, p_val, k_val)
-        if _is_response_grounded(response, chunks):
+        
+        # Post-process check: if response states information is not available, return standard fallback
+        resp_lower = response.lower()
+        refusal_keywords = [
+            "not mentioned", "no mention", "does not mention", 
+            "not present in the context", "not found in the context",
+            "not provided in the context", "does not contain", 
+            "does not state", "no information", "cannot answer",
+            "unable to answer", "context does not provide",
+            "not available in the uploaded", "not available in the document",
+            "does not explicitly mention", "does not explicitly state",
+            "don't have relevant answer", "do not have relevant",
+            "no relevant document"
+        ]
+        if any(rk in resp_lower for rk in refusal_keywords):
+            logger.info(f"LLM response indicates missing info/refusal. Overriding with fallback response.")
+            return NOT_AVAILABLE_RESPONSE
+
+        if _is_response_grounded(response, chunks, prompt_payload.get("question", "")):
             return response
         else:
             logger.warning("Generated LLM response failed grounding validation. Overriding with fallback response.")
@@ -66,7 +102,7 @@ def generate_llm_response(
     return _local_extractive_generation(prompt_payload, chunks, temp, p_val, k_val)
 
 
-def _is_response_grounded(response: str, chunks: List[Dict[str, Any]]) -> bool:
+def _is_response_grounded(response: str, chunks: List[Dict[str, Any]], question: str = "") -> bool:
     """
     Checks if the generated response is grounded in the retrieved chunks by verifying
     that the descriptive terms in the response actually exist within the chunk texts.
@@ -77,7 +113,12 @@ def _is_response_grounded(response: str, chunks: List[Dict[str, Any]]) -> bool:
     resp_lower = response.strip().lower()
     fallback_lower = NOT_AVAILABLE_RESPONSE.strip().lower()
     
-    if fallback_lower in resp_lower or "don't have relevant answer" in resp_lower or "no relevant document" in resp_lower:
+    if (
+        fallback_lower in resp_lower or 
+        "don't have relevant answer" in resp_lower or 
+        "no relevant document" in resp_lower or 
+        "do not have relevant" in resp_lower
+    ):
         return True
 
     resp_words = set(re.findall(r'\b\w{3,}\b', resp_lower))
@@ -89,7 +130,11 @@ def _is_response_grounded(response: str, chunks: List[Dict[str, Any]]) -> bool:
         "more", "most", "other", "some", "such", "than", "too", "very", "she", "her", "him", 
         "his", "them", "their", "theirs", "its", "our", "ours", "your", "yours", "source",
         "page", "document", "answer", "question", "text", "context", "information", "according",
-        "uploaded", "provided", "snippet", "file", "citation"
+        "uploaded", "provided", "snippet", "file", "citation",
+        "built", "build", "program", "programming", "language", "tracker", "project", 
+        "support", "use", "using", "run", "running", "make", "made", "create", "created", 
+        "develop", "developed", "write", "written", "code", "coded", "base", "based", 
+        "features", "feature"
     }
     
     resp_keywords = resp_words - stop_words
@@ -98,8 +143,39 @@ def _is_response_grounded(response: str, chunks: List[Dict[str, Any]]) -> bool:
 
     combined_chunks_text = " ".join([c.get("text", "") for c in chunks]).lower()
     chunk_words = set(re.findall(r'\b\w{3,}\b', combined_chunks_text))
+    chunk_word_roots = {get_word_root(cw) for cw in chunk_words}
 
-    matching_keywords = resp_keywords.intersection(chunk_words)
+    # Identify query terms that are completely absent from the context (excluding stop words)
+    if question:
+        q_words_clean = set(re.findall(r'\b\w{3,}\b', question.lower())) - stop_words
+        out_of_context_terms = set()
+        for qw in q_words_clean:
+            qw_root = get_word_root(qw)
+            if qw_root not in chunk_word_roots and not any(qw_root in cw or cw.startswith(qw_root) for cw in chunk_words):
+                out_of_context_terms.add(qw)
+
+        if out_of_context_terms:
+            contained_terms = set()
+            for rk in resp_keywords:
+                rk_root = get_word_root(rk)
+                for oct in out_of_context_terms:
+                    oct_root = get_word_root(oct)
+                    if rk_root == oct_root or rk.startswith(oct_root) or oct.startswith(rk_root):
+                        contained_terms.add(rk)
+            
+            if contained_terms:
+                # Check for negation in response
+                negation_words = {"not", "no", "unable", "cannot", "future", "won't", "don't", "lack", "missing", "neither"}
+                if not any(nw in resp_lower for nw in negation_words):
+                    logger.warning(f"Grounding check: Response contains out-of-context terms {contained_terms} without negation. Flagging as ungrounded.")
+                    return False
+
+    matching_keywords = set()
+    for rk in resp_keywords:
+        rk_root = get_word_root(rk)
+        if rk_root in chunk_word_roots or any(rk_root in cw or cw.startswith(rk_root) for cw in chunk_words):
+            matching_keywords.add(rk)
+
     if not matching_keywords:
         logger.info("Grounding check: Zero matching keywords found between LLM response and retrieved context.")
         return False

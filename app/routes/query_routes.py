@@ -4,19 +4,56 @@ FastAPI endpoint route for handling RAG user questions. Accepts dynamic generati
 hyperparameters (Temperature, Top-P, Top-K) configured from the frontend.
 """
 
+import os
+import json
+import re
 import time
 import logging
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
-from app.config import DEFAULT_TEMPERATURE, DEFAULT_TOP_P, DEFAULT_TOP_K
+from app.config import DEFAULT_TEMPERATURE, DEFAULT_TOP_P, DEFAULT_TOP_K, NOT_AVAILABLE_RESPONSE
 from app.modules.retriever import retrieve_relevant_chunks
 from app.modules.prompt_builder import build_rag_prompt
 from app.modules.llm_client import generate_llm_response
 
 logger = logging.getLogger(__name__)
 
+def compare_filenames(file1: str, file2: str) -> bool:
+    if not file1 or not file2:
+        return False
+    norm1 = file1.lower().replace("_", "").replace("-", "").replace(" ", "")
+    norm2 = file2.lower().replace("_", "").replace("-", "").replace(" ", "")
+    return norm1 == norm2
+
+
+def is_abstention_response(answer: str) -> bool:
+    if not answer:
+        return True
+    ans_lower = answer.lower()
+    fallback_lower = NOT_AVAILABLE_RESPONSE.lower()
+    return (
+        fallback_lower in ans_lower or
+        "don't have relevant answer" in ans_lower or
+        "no relevant document" in ans_lower or
+        "do not have relevant" in ans_lower or
+        "cannot answer" in ans_lower or
+        "unable to answer" in ans_lower
+    )
+
 router = APIRouter(prefix="/api", tags=["RAG Query Engine"])
+
+# Load evaluation cases on startup
+EVAL_SET_PATH = os.path.join(os.path.dirname(__file__), "..", "evaluation_set.json")
+EVAL_CASES = []
+if os.path.exists(EVAL_SET_PATH):
+    try:
+        with open(EVAL_SET_PATH, "r", encoding="utf-8") as f:
+            eval_data = json.load(f)
+            EVAL_CASES = eval_data.get("evaluation_cases", [])
+            logger.info(f"Loaded {len(EVAL_CASES)} evaluation cases for dynamic response checking.")
+    except Exception as e:
+        logger.error(f"Error loading evaluation cases: {e}")
 
 
 class QueryRequest(BaseModel):
@@ -62,6 +99,7 @@ class QueryResponse(BaseModel):
     retrieved_sources: List[Dict[str, Any]]
     execution_time_seconds: float
     parameters_used: Dict[str, Any]
+    evaluation_results: Optional[Dict[str, Any]] = None
 
 
 @router.post("/query", response_model=QueryResponse, status_code=status.HTTP_200_OK)
@@ -102,6 +140,9 @@ async def ask_question(request: QueryRequest) -> QueryResponse:
     logger.info(f"Received query request: '{question}' | Temp={temp}, Top-P={top_p}, Top-K={top_k}")
 
     try:
+        from app.modules.vector_store import sync_vector_store_with_uploads
+        sync_vector_store_with_uploads()
+        
         # Step 1: Retrieve relevant context chunks using vector similarity search
         chunks = retrieve_relevant_chunks(question=question, top_k=top_k)
 
@@ -121,15 +162,84 @@ async def ask_question(request: QueryRequest) -> QueryResponse:
 
         # Format retrieved citations for frontend display
         citations = []
+        retrieved_sources_raw = []
         for idx, c in enumerate(chunks, 1):
             meta = c.get("metadata", {})
+            src = meta.get("source", "Unknown Document")
+            retrieved_sources_raw.append(src)
             citations.append({
                 "citation_id": idx,
-                "source": meta.get("source", "Unknown Document"),
+                "source": src,
                 "page": meta.get("page", 1),
                 "similarity_score": c.get("similarity", 0.0),
                 "snippet": c.get("text", "")[:250] + ("..." if len(c.get("text", "")) > 250 else "")
             })
+
+        # Dynamic correctness evaluation
+        matched_case = None
+        norm_q = question.lower().rstrip("?. ")
+        for case in EVAL_CASES:
+            case_q = case.get("question", "").lower().rstrip("?. ")
+            if norm_q == case_q:
+                matched_case = case
+                break
+
+        expected_source = matched_case.get("expected_source") if matched_case else None
+        expect_abstention = matched_case.get("expect_abstention", False) if matched_case else False
+        keywords = matched_case.get("target_answer_keywords", []) if matched_case else []
+
+        # Run evaluation using our new module
+        from app.modules.evaluator import evaluate_rag_response, check_keyword_in_text
+        eval_results = evaluate_rag_response(
+            question=question,
+            answer=answer,
+            chunks=chunks,
+            expected_keywords=keywords,
+            expect_abstention=expect_abstention
+        )
+
+        if matched_case:
+            if expected_source:
+                retrieval_ok = any(compare_filenames(expected_source, src) for src in retrieved_sources_raw)
+            else:
+                if matched_case.get("category") == "adversarial":
+                    retrieval_ok = True
+                else:
+                    retrieval_ok = (len(chunks) == 0)
+            
+            # Check answer quality (abstention)
+            if expect_abstention:
+                abstention_ok = is_abstention_response(answer)
+            else:
+                abstention_ok = not is_abstention_response(answer)
+
+            # Check keyword match
+            if keywords and not expect_abstention:
+                keyword_matches = [kw for kw in keywords if check_keyword_in_text(kw, answer)]
+                keyword_score = len(keyword_matches) / len(keywords)
+                keyword_ok = keyword_score >= 0.5
+            else:
+                keyword_matches = []
+                keyword_score = 1.0
+                keyword_ok = True
+
+            case_passed = retrieval_ok and abstention_ok and keyword_ok
+
+            eval_results["has_ground_truth"] = True
+            eval_results["case_passed"] = case_passed
+            eval_results["retrieval_ok"] = retrieval_ok
+            eval_results["abstention_ok"] = abstention_ok
+            eval_results["keyword_ok"] = keyword_ok
+            eval_results["keyword_matches"] = keyword_matches
+            eval_results["keyword_score"] = keyword_score
+            eval_results["expected_source"] = expected_source
+            eval_results["expect_abstention"] = expect_abstention
+            eval_results["precision"] = 1.0 if retrieval_ok else 0.0
+            eval_results["recall"] = 1.0 if retrieval_ok else 0.0
+        else:
+            eval_results["has_ground_truth"] = False
+            eval_results["grounding_score"] = eval_results.get("faithfulness", 0.0)
+            eval_results["grounding_ok"] = eval_results.get("faithfulness", 0.0) >= 0.25
 
         return QueryResponse(
             status="success",
@@ -141,7 +251,8 @@ async def ask_question(request: QueryRequest) -> QueryResponse:
                 "temperature": temp,
                 "top_p": top_p,
                 "top_k": top_k
-            }
+            },
+            evaluation_results=eval_results
         )
 
     except Exception as e:
@@ -150,4 +261,57 @@ async def ask_question(request: QueryRequest) -> QueryResponse:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred while generating the answer: {str(e)}"
         )
+
+
+@router.post("/evaluate/run", status_code=status.HTTP_200_OK)
+async def trigger_evaluation() -> Dict[str, Any]:
+    """
+    Triggers the benchmark evaluation runner against evaluation_set.json.
+    """
+    try:
+        from app.evaluate import run_evaluation
+        run_evaluation()
+        
+        report_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "evaluation_report.json")
+        if os.path.exists(report_path):
+            with open(report_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Evaluation completed but report file was not generated."
+            )
+    except Exception as e:
+        logger.error(f"Error running evaluation suite: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to run evaluation: {str(e)}"
+        )
+
+
+@router.get("/evaluate/report", status_code=status.HTTP_200_OK)
+async def get_evaluation_report() -> Dict[str, Any]:
+    """
+    Retrieves the latest generated evaluation report.
+    """
+    report_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "evaluation_report.json")
+    if os.path.exists(report_path):
+        try:
+            with open(report_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to read evaluation report: {str(e)}"
+            )
+    else:
+        return {
+            "status": "unevaluated",
+            "summary": {
+                "total_cases": 0,
+                "passed_cases": 0,
+                "success_rate_percent": 0.0
+            },
+            "results": []
+        }
 

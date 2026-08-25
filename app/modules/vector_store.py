@@ -462,4 +462,55 @@ def clear_vector_store() -> bool:
         return True
 
 
+def sync_vector_store_with_uploads() -> None:
+    """
+    Synchronizes the vector database with the physical files in the data/uploads directory.
+    If a file exists in the directory but is not indexed, it chunks and indexes it.
+    If a file is indexed but does not exist in the directory, it deletes its index entry.
+    """
+    from app.config import UPLOAD_DIR
+    from app.modules.document_processor import extract_text_from_file, chunk_document_pages
+    from app.modules.embeddings import generate_batch_embeddings
+
+    try:
+        # Get physical files in uploads directory
+        physical_files = []
+        if UPLOAD_DIR.exists():
+            physical_files = [f.name for f in UPLOAD_DIR.iterdir() if f.is_file()]
+
+        # Get currently indexed files
+        indexed_docs = get_indexed_documents()
+        indexed_files = [doc["filename"] for doc in indexed_docs]
+
+        logger.info(f"Sync: Running. Physical files: {physical_files} | Indexed files: {indexed_files}")
+
+        # 1. Delete index for files that are physically missing
+        for filename in indexed_files:
+            if filename not in physical_files:
+                logger.info(f"Sync: Document '{filename}' is physically missing. Deleting from index.")
+                delete_document_from_vector_store(filename)
+
+        # 2. Index files that are physically present but not indexed
+        for filename in physical_files:
+            if filename not in indexed_files:
+                file_path = UPLOAD_DIR / filename
+                logger.info(f"Sync: Found new physical file '{filename}'. Auto-indexing.")
+                try:
+                    pages = extract_text_from_file(str(file_path))
+                    chunks = chunk_document_pages(pages, doc_name=filename)
+                    if chunks:
+                        texts = [c["text"] for c in chunks]
+                        embeddings = generate_batch_embeddings(texts)
+                        add_chunks_to_vector_store(chunks, embeddings)
+                        logger.info(f"Sync: Successfully indexed '{filename}' ({len(chunks)} chunks).")
+                    else:
+                        logger.warning(f"Sync: No chunks extracted from '{filename}'.")
+                except Exception as ex:
+                    logger.error(f"Sync: Failed to auto-index '{filename}': {ex}")
+
+    except Exception as e:
+        logger.error(f"Error during vector store synchronization: {e}")
+
+
+
 

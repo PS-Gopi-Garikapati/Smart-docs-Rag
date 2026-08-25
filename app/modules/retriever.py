@@ -13,6 +13,24 @@ from app.config import DEFAULT_TOP_K, SIMILARITY_THRESHOLD
 logger = logging.getLogger(__name__)
 
 
+def get_word_root(w: str) -> str:
+    """
+    Normalizes a word to its root stem by removing common plurals and verb suffixes.
+    """
+    w = w.lower()
+    if w.endswith("ies"):
+        w = w[:-3] + "i"
+    elif w.endswith("es") and not w.endswith("ces") and not w.endswith("ses"):
+        w = w[:-2]
+    elif w.endswith("s") and not w.endswith("ss") and not w.endswith("us"):
+        w = w[:-1]
+    elif w.endswith("ing"):
+        w = w[:-3]
+    elif w.endswith("ed"):
+        w = w[:-2]
+    return w[:4] if len(w) >= 4 else w
+
+
 def retrieve_relevant_chunks(question: str, top_k: int = DEFAULT_TOP_K) -> List[Dict[str, Any]]:
     """
     Purpose:
@@ -78,16 +96,24 @@ def retrieve_relevant_chunks(question: str, top_k: int = DEFAULT_TOP_K) -> List[
                     "when", "where", "which", "while", "who", "whom", "why", "with", "would", "you", "your", "yours",
                     "tell", "show", "give", "bot", "answer"
                 }
-                q_words = [w.strip().lower() for w in question.replace("=", " ").replace(":", " ").split() if len(w.strip()) > 1 and w.strip().lower() not in stop_words]
+                import re
+                q_words = [w for w in re.findall(r'\b\w+\b', question.lower()) if len(w) > 1 and w not in stop_words]
                 if q_words:
                     direct_matches = []
                     for item in chunks_to_search:
                         text_lower = item["text"].lower()
+                        text_words = re.findall(r'\b\w+\b', text_lower)
                         matches = 0
                         for word in q_words:
+                            # 1. Try exact substring match
                             if word in text_lower:
                                 matches += 1
-                        if matches > 0:
+                                continue
+                            # 2. Try root/stem matching
+                            w_root = get_word_root(word)
+                            if any(w_root in tw or tw.startswith(w_root) for tw in text_words):
+                                matches += 1
+                        if (matches / len(q_words)) >= 0.7 or (matches > 0 and any(w.isdigit() for w in q_words)):
                             direct_matches.append({
                                 "text": item["text"],
                                 "metadata": item["metadata"],
@@ -100,6 +126,34 @@ def retrieve_relevant_chunks(question: str, top_k: int = DEFAULT_TOP_K) -> List[
 
         # Apply confidence controls: filter by similarity threshold
         filtered_chunks = [c for c in matched_chunks if c.get("similarity", 0.0) >= SIMILARITY_THRESHOLD]
+
+        # Source-Diversification (Round-Robin Selection) to prevent single-document dominance
+        if len(filtered_chunks) > 1:
+            chunks_by_source = {}
+            for c in filtered_chunks:
+                src = c.get("metadata", {}).get("source", "unknown")
+                if src not in chunks_by_source:
+                    chunks_by_source[src] = []
+                chunks_by_source[src].append(c)
+
+            diversified_chunks = []
+            sources = list(chunks_by_source.keys())
+            src_indices = {src: 0 for src in sources}
+            
+            while len(diversified_chunks) < k:
+                added_any = False
+                for src in sources:
+                    idx = src_indices[src]
+                    if idx < len(chunks_by_source[src]):
+                        diversified_chunks.append(chunks_by_source[src][idx])
+                        src_indices[src] += 1
+                        added_any = True
+                        if len(diversified_chunks) == k:
+                            break
+                if not added_any:
+                    break
+            filtered_chunks = diversified_chunks
+
         logger.info(f"Retrieved {len(filtered_chunks)} chunks exceeding similarity threshold {SIMILARITY_THRESHOLD}.")
         return filtered_chunks
 

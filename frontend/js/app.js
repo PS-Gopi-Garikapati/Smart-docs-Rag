@@ -36,12 +36,19 @@ document.addEventListener("DOMContentLoaded", () => {
         btnClearAll: document.getElementById("btn-clear-all"),
 
         // Toast container
-        toastContainer: document.getElementById("toast-container")
+        toastContainer: document.getElementById("toast-container"),
+
+        // Tab and View elements
+        chatWorkspace: document.querySelector(".chat-workspace")
     };
 
     // State Variables
     let isUploading = false;
     let isQuerying = false;
+    let isEvaluating = false;
+    let evalReportData = null;
+    let evalChart = null;
+    let activeFilter = "all";
 
     // Initialize Event Listeners
     initEventListeners();
@@ -101,6 +108,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         elements.btnClearChat.addEventListener("click", clearChatFeed);
         elements.btnClearAll.addEventListener("click", clearAllDocuments);
+
     }
 
     /**
@@ -402,6 +410,78 @@ document.addEventListener("DOMContentLoaded", () => {
             `;
         }
 
+        // Show evaluation results only if the answer is not a fallback/error response
+        const ansLower = data.answer.toLowerCase();
+        const isFallback = ansLower.includes("don't have relevant answer") || 
+                           ansLower.includes("no relevant document") || 
+                           ansLower.includes("i do not have");
+
+        let evaluationHtml = "";
+        if (!isFallback && data.evaluation_results) {
+            const ev = data.evaluation_results;
+            const faithfulness = ev.faithfulness !== undefined ? Math.round(ev.faithfulness * 100) + "%" : "0%";
+            const relevancy = ev.relevancy !== undefined ? Math.round(ev.relevancy * 100) + "%" : "0%";
+            const correctness = ev.correctness !== undefined ? Math.round(ev.correctness * 100) + "%" : "0%";
+            const precision = ev.precision !== undefined ? Math.round(ev.precision * 100) + "%" : "0%";
+            const recall = ev.recall !== undefined ? Math.round(ev.recall * 100) + "%" : "0%";
+
+            let benchmarkBadgeHtml = "";
+            if (ev.has_ground_truth) {
+                const passStatusStyle = ev.case_passed ? 
+                    "background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); color: var(--accent-emerald);" : 
+                    "background: rgba(244, 63, 94, 0.15); border: 1px solid rgba(244, 63, 94, 0.4); color: var(--accent-rose);";
+                const passStatusText = ev.case_passed ? "BENCHMARK PASS" : "BENCHMARK FAIL";
+                const detailText = `Retrieval: ${ev.retrieval_ok ? 'PASS' : 'FAIL'} | Abstention: ${ev.abstention_ok ? 'PASS' : 'FAIL'} | Keywords: ${Math.round(ev.keyword_score * 100)}%`;
+
+                benchmarkBadgeHtml = `
+                    <span style="margin-left: auto; font-size: 0.65rem; padding: 0.15rem 0.4rem; border-radius: 4px; font-weight: 700; text-transform: uppercase; ${passStatusStyle}" title="${detailText}">
+                        ${passStatusText}
+                    </span>
+                `;
+            } else if (ev.grounding_score !== undefined) {
+                const groundingStyle = ev.grounding_ok ? 
+                    "background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); color: var(--accent-emerald);" : 
+                    "background: rgba(244, 63, 94, 0.15); border: 1px solid rgba(244, 63, 94, 0.4); color: var(--accent-rose);";
+                const groundingText = ev.grounding_ok ? "GROUNDED" : "UNGROUNDED HALLUCINATION RISK";
+                benchmarkBadgeHtml = `
+                    <span style="margin-left: auto; font-size: 0.65rem; padding: 0.15rem 0.4rem; border-radius: 4px; font-weight: 700; text-transform: uppercase; ${groundingStyle}">
+                        ${groundingText}
+                    </span>
+                `;
+            }
+
+            evaluationHtml = `
+                <div class="evaluation-wrapper mt-3" style="border-top: 1px solid var(--border-color); padding-top: 0.85rem; display: flex; flex-direction: column; gap: 0.5rem;">
+                    <div style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; gap: 0.35rem; width: 100%;">
+                        <i class="fa-solid fa-gauge-high text-accent"></i> Live Evaluation Metrics
+                        ${benchmarkBadgeHtml}
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 0.5rem; margin-top: 0.25rem;">
+                        <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 6px; padding: 0.4rem 0.6rem; display: flex; flex-direction: column;">
+                            <span style="font-size: 0.7rem; color: var(--text-dim); font-weight: 500;">Faithfulness</span>
+                            <span style="font-size: 0.95rem; font-weight: 700; color: var(--accent-emerald); font-family: monospace; margin-top: 0.1rem;">${faithfulness}</span>
+                        </div>
+                        <div style="background: rgba(6, 182, 212, 0.08); border: 1px solid rgba(6, 182, 212, 0.2); border-radius: 6px; padding: 0.4rem 0.6rem; display: flex; flex-direction: column;">
+                            <span style="font-size: 0.7rem; color: var(--text-dim); font-weight: 500;">Relevancy</span>
+                            <span style="font-size: 0.95rem; font-weight: 700; color: var(--accent-cyan); font-family: monospace; margin-top: 0.1rem;">${relevancy}</span>
+                        </div>
+                        <div style="background: rgba(139, 92, 246, 0.08); border: 1px solid rgba(139, 92, 246, 0.2); border-radius: 6px; padding: 0.4rem 0.6rem; display: flex; flex-direction: column;">
+                            <span style="font-size: 0.7rem; color: var(--text-dim); font-weight: 500;">Correctness</span>
+                            <span style="font-size: 0.95rem; font-weight: 700; color: #8b5cf6; font-family: monospace; margin-top: 0.1rem;">${correctness}</span>
+                        </div>
+                        <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.2); border-radius: 6px; padding: 0.4rem 0.6rem; display: flex; flex-direction: column;">
+                            <span style="font-size: 0.7rem; color: var(--text-dim); font-weight: 500;">Precision</span>
+                            <span style="font-size: 0.95rem; font-weight: 700; color: var(--accent-amber); font-family: monospace; margin-top: 0.1rem;">${precision}</span>
+                        </div>
+                        <div style="background: rgba(244, 63, 94, 0.08); border: 1px solid rgba(244, 63, 94, 0.2); border-radius: 6px; padding: 0.4rem 0.6rem; display: flex; flex-direction: column;">
+                            <span style="font-size: 0.7rem; color: var(--text-dim); font-weight: 500;">Recall</span>
+                            <span style="font-size: 0.95rem; font-weight: 700; color: var(--accent-rose); font-family: monospace; margin-top: 0.1rem;">${recall}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
         msgDiv.innerHTML = `
             <div class="msg-bubble">
                 <div class="bubble-header-row">
@@ -412,6 +492,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 </div>
                 <div class="answer-text">${parsedContent}</div>
                 ${citationsHtml}
+                ${evaluationHtml}
             </div>
             <div class="msg-meta">
                 <span>Assistant</span> • <span>${data.execution_time_seconds}s</span> • 
@@ -575,4 +656,3 @@ document.addEventListener("DOMContentLoaded", () => {
         }, 3500);
     }
 });
-

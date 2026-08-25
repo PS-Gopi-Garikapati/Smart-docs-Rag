@@ -181,6 +181,8 @@ async def list_documents() -> ListDocumentsResponse:
     ListDocumentsResponse: File listings and counts.
     """
     try:
+        from app.modules.vector_store import sync_vector_store_with_uploads
+        sync_vector_store_with_uploads()
         documents = get_indexed_documents()
         return ListDocumentsResponse(
             status="success",

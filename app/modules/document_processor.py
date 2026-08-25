@@ -33,9 +33,9 @@ def clean_text_content(text: str) -> str:
     """
     if not text:
         return ""
-    text = text.replace('\x00', '')
-    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', text)
-    return re.sub(r'\s+', ' ', text).strip()
+    text = text.replace('\x00', '') #Some documents contain invisible null characters.
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', text)#This removes other unwanted control characters.
+    return re.sub(r'\s+', ' ', text).strip() #Converts multiple whitespace characters into one space.
 
 
 def is_zip_file(file_path: str) -> bool:
